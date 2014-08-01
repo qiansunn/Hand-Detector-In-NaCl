@@ -106,7 +106,7 @@
   window.URL = window.URL || window.webkitURL || window.msURL || window.oURL;
   // Normalizes navigator.getUserMedia
   navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia|| navigator.mozGetUserMedia || navigator.msGetUserMedia;
-  navigator.getUserMedia({audio: false,  video: {'mandatory':{'depth': 'rgbd'} } }, successsCallback, errorCallback);
+  navigator.getUserMedia({audio: false,  video: {'mandatory':{'depth': true} } }, successsCallback, errorCallback);
   function successsCallback(stream) {
     //document.getElementById('video_box').style.display = 'block';
     document.getElementById('camera_box').src = (window.URL && window.URL.createObjectURL) ? window.URL.createObjectURL(stream) : stream;

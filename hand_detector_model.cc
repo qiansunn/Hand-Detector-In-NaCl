@@ -13,8 +13,8 @@ using namespace std;
 
 #define MAX_OBJECT_SIZE 10000
 #define DEPTH_THR 10
-#define SENSOR_MIN 30
-#define SENSOR_MAX 180
+#define SENSOR_MIN 40
+#define SENSOR_MAX 210
 #define EMPTY 0
 #define HAND 255
 
@@ -28,46 +28,48 @@ HandDetectorModel::HandDetectorModel():
     rgb_image(0),
     depth_image(0),
     use_depth(false),
-    detector_init(false)
+    use_color(false)
     {
 }
 
 
-bool HandDetectorModel::Initialize(IplImage* rgb_image_, IplImage* depth_image_, bool use_depth_) {
-  if (rgb_image_->depth != RGB_FORMAT) 
-    return false;
-  if (!use_depth_)
-    return false;
-  else {
-    if (depth_image_->depth == DEPTH_FORMAT && (rgb_image_->width == depth_image_->width) && (rgb_image_->height == depth_image_->height))
-      detector_init = true;
+bool HandDetectorModel::Initialize(IplImage* rgb_image_, IplImage* depth_image_, bool use_color_, bool use_depth_) {
+  if (use_color_) {
+    if (rgb_image_->depth != RGB_FORMAT) 
+      return false;
+    rgb_image = rgb_image_;
+    use_color = true;
+    frame_size = cvSize(rgb_image_->width, rgb_image_->height);
+    hsv_max = cvScalar(20, 150, 255, 0);
+    hsv_min = cvScalar(0, 30, 80, 0);
   }
-
-  frame_size = cvSize(rgb_image_->width, rgb_image_->height);
-  rgb_image = rgb_image_;
-  depth_image = depth_image_;
-  use_depth = use_depth_;
-  hsv_min = cvScalar(0, 30, 80, 0);
-  hsv_max = cvScalar(20, 150, 255, 0);
-  return detector_init;
+  if (use_depth_) {
+    depth_image = depth_image_;
+    use_depth = true;
+    frame_size = cvSize(depth_image_->width, depth_image_->height);
+  }  
+  return true;
 }
 
 
 
 ObjectState* HandDetectorModel::Detect(IplImage* mask_) {
   mask = mask_;
-  if (detector_init == false)
+  if ((use_color == false) && (use_depth == false))
     return (ObjectState*)0;
-  IplImage* hsv_image = cvCreateImage(frame_size, 8, 3);
-  IplImage* hsv_mask = cvCreateImage(frame_size, 8, 1);
-  IplImage* gray_image = cvCreateImage(frame_size, 8, 1);
+/*  if (use_color == true) {
+    IplImage* hsv_image = cvCreateImage(frame_size, 8, 3);
+    IplImage* hsv_mask = cvCreateImage(frame_size, 8, 1);
+    IplImage* gray_image = cvCreateImage(frame_size, 8, 1);
 
-  cvCvtColor(rgb_image, hsv_image, CV_RGB2HSV);
-  cvInRangeS(hsv_image, hsv_min, hsv_max, hsv_mask);
-  cvCvtColor(rgb_image, gray_image, CV_BGR2GRAY);
-  cvMin(gray_image,hsv_mask,gray_image);
-  if (use_depth) {
-    SegmentHand(gray_image);
+    cvCvtColor(rgb_image, hsv_image, CV_RGB2HSV);
+    cvInRangeS(hsv_image, hsv_min, hsv_max, hsv_mask);
+    cvCvtColor(rgb_image, gray_image, CV_BGR2GRAY);
+    cvMin(gray_image,hsv_mask,gray_image);
+  }
+*/
+  if (use_depth == true) {
+    SegmentHand(depth_image);
   }
   cvDilate(mask,mask,NULL,10);
   cvErode(mask,mask,NULL,10);
@@ -87,9 +89,9 @@ ObjectState* HandDetectorModel::Detect(IplImage* mask_) {
       }
     }
   }
-  cvReleaseImage(&hsv_image);
-  cvReleaseImage(&hsv_mask);
-  cvReleaseImage(&gray_image);
+//  cvReleaseImage(&hsv_image);
+//  cvReleaseImage(&hsv_mask);
+//  cvReleaseImage(&gray_image);
   return new ObjectState(rect);
 }
 
@@ -97,17 +99,18 @@ ObjectState* HandDetectorModel::Detect(IplImage* mask_) {
 
 void HandDetectorModel::SegmentHand(IplImage* region) {
   
-  pair<int, int> current = SearchNearestPixel(region);
+  pair<int, int> current = SearchNearestPixel(depth_image);
   if (current.first < 0) {
     return;
   }
   IplImage* visited = cvCreateImage(frame_size, 8, 1);
-  double mean = CV_IMAGE_ELEM(depth_image,unsigned char,current.first,current.second);
+  cvZero(visited);
+  double mean = CV_IMAGE_ELEM(depth_image,unsigned char,current.second,current.first);
   int minx=depth_image->width,miny=depth_image->height,maxx=0,maxy=0;
   int pixelcount = 1;
   _pixels.push(current);
 
-  while ((!_pixels.empty()) & (pixelcount < MAX_OBJECT_SIZE)) {
+  while ((!_pixels.empty()) && (pixelcount < MAX_OBJECT_SIZE)) {
     current = _pixels.front();
     _pixels.pop();
 
@@ -117,26 +120,26 @@ void HandDetectorModel::SegmentHand(IplImage* region) {
       else if (current.second > maxy) maxy = current.second;
 
     if (current.first + 1 < region->width 
-        && CV_IMAGE_ELEM(visited, unsigned char, current.first+1, current.second) == 0 ) {
-      CV_IMAGE_ELEM(visited,unsigned char,current.first+1, current.second) = 255;
+        && CV_IMAGE_ELEM(visited, unsigned char, current.second, current.first+1) == 0 ) {
+      CV_IMAGE_ELEM(visited,unsigned char,current.second, current.first+1) = 255;
       ProcessNeighbor(pixelcount, mean, current.first + 1,current.second);
     }
 
     if (current.first - 1 > 0
-        && CV_IMAGE_ELEM(visited, unsigned char, current.first-1, current.second) == 0 ) {
-      CV_IMAGE_ELEM(visited,unsigned char,current.first-1, current.second) = 255;
+        && CV_IMAGE_ELEM(visited, unsigned char, current.second, current.first-1) == 0 ) {
+      CV_IMAGE_ELEM(visited,unsigned char,current.second, current.first-1) = 255;
       ProcessNeighbor(pixelcount, mean, current.first - 1,current.second);
     }
 
     if (current.second + 1 < region->height 
-        && CV_IMAGE_ELEM(visited, unsigned char, current.first, current.second+1) == 0) {
-      CV_IMAGE_ELEM(visited,unsigned char,current.first, current.second+1) = 255;
+        && CV_IMAGE_ELEM(visited, unsigned char, current.second+1, current.first) == 0) {
+      CV_IMAGE_ELEM(visited,unsigned char,current.second+1, current.first) = 255;
       ProcessNeighbor(pixelcount,mean,current.first,current.second + 1);
     }
 
     if (current.second - 1 > 0
-        && CV_IMAGE_ELEM(visited, unsigned char, current.first, current.second-1) == 0) {
-      CV_IMAGE_ELEM(visited,unsigned char,current.first, current.second-1) = 255;
+        && CV_IMAGE_ELEM(visited, unsigned char, current.second-1, current.first) == 0) {
+      CV_IMAGE_ELEM(visited,unsigned char,current.second-1, current.first) = 255;
       ProcessNeighbor(pixelcount,mean,current.first,current.second - 1);
     }
   }
@@ -156,7 +159,11 @@ pair<int, int> HandDetectorModel::SearchNearestPixel(IplImage* region) {
     regionptr = (const unsigned char*)(region->imageData+y*region->widthStep);
     for (int x=0; x<region->width; x++) {
       if(regionptr[x] == 0) continue;
-      if(depthptr[x] > SENSOR_MIN && depthptr[x] < SENSOR_MAX && depthptr[x] > max) {
+      if(depthptr[x] > SENSOR_MIN && depthptr[x] < SENSOR_MAX && depthptr[x] > max
+         && (CV_IMAGE_ELEM(depth_image,unsigned char,y+1,x)!=0) 
+         && (CV_IMAGE_ELEM(depth_image,unsigned char,y-1,x)!=0)    
+         && (CV_IMAGE_ELEM(depth_image,unsigned char,y,x+1)!=0)
+         && (CV_IMAGE_ELEM(depth_image,unsigned char,y,x-1)!=0)) {
         max = depthptr[x];
         pt.first = x;
         pt.second = y;
@@ -170,14 +177,14 @@ pair<int, int> HandDetectorModel::SearchNearestPixel(IplImage* region) {
 void HandDetectorModel::ProcessNeighbor(int &pixelcount, double &mean, const short first, const short second)
 {
    
-  unsigned char d = CV_IMAGE_ELEM(depth_image,unsigned char,first,second);
+  unsigned char d = CV_IMAGE_ELEM(depth_image,unsigned char,second,first);
 
-    if (CV_IMAGE_ELEM(mask, unsigned char, first, second) == EMPTY &&
+    if (CV_IMAGE_ELEM(mask, unsigned char, second, first) == EMPTY &&
          fabs(d-mean/pixelcount) < DEPTH_THR && d > SENSOR_MIN && d <= SENSOR_MAX)
     {
         pixelcount++;
         mean += d;
-        CV_IMAGE_ELEM(mask, unsigned char, first, second) = HAND;
+        CV_IMAGE_ELEM(mask, unsigned char, second, first) = HAND;
         _pixels.push(pair<int, int>(first,second));
     }
 }
@@ -185,4 +192,3 @@ void HandDetectorModel::ProcessNeighbor(int &pixelcount, double &mean, const sho
 
 
 }
-

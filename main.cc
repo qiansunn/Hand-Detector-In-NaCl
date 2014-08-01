@@ -166,9 +166,10 @@ void MediaStreamVideoDemoInstance::OnGetFrame(
 
 
 void MediaStreamVideoDemoInstance::RecognizeFace(pp::VideoFrame frame){
-  stringstream ss;
-  char* data = static_cast<char*>(frame.GetDataBuffer());
+  char* data = NULL; 
+  data = static_cast<char*>(frame.GetDataBuffer());
   pp::Size size;
+  stringstream ss;
   frame.GetSize(&size);
   if (size != frame_size_) {
     frame_size_ = size;
@@ -188,17 +189,16 @@ void MediaStreamVideoDemoInstance::RecognizeFace(pp::VideoFrame frame){
   IplImage* depth_image = cvCreateImage(cvSize(320,240), 8, 1);
   IplImage* rgb_image = cvCreateImage(cvSize(320,240), 8, 3);
   IplImage* hand_mask = cvCreateImage(cvSize(320,240), 8, 1);
-  cvZero(mask);
-  cvSplit(down_sample_image, b_image, g_image, r_image, depth_image);
-  cvMerge(r_image, g_image, b_image, NULL, rgb_image);
-
-
+  cvZero(hand_mask);
+  //cvSplit(down_sample_image, b_image, g_image, r_image, depth_image);
+  //cvMerge(r_image, g_image, b_image, NULL, rgb_image);
+  cvCvtColor( down_sample_image, depth_image, CV_BGRA2GRAY );
   ObjectState* object_state;
   CvRect rect;
-  if(hand_detector->Initialize(rgb_image, depth_image, true)) {
-    object_state = hand_detector->Detect(hand_mask);
-    rect = object_state->GetRect();
-  }
+  hand_detector->Initialize(NULL, depth_image, false, true);
+  object_state = hand_detector->Detect(hand_mask);
+  rect = object_state->GetRect();
+  
 /*
 catch (cv::Exception& e) {
   const char* err_msg = e.what();
@@ -218,7 +218,7 @@ catch (cv::Exception& e) {
   cvReleaseImage(&g_image);
   cvReleaseImage(&r_image);
   cvReleaseImage(&depth_image);
-  cvReleaseImage(&mask);
+  cvReleaseImage(&hand_mask);
   cvReleaseImage(&rgb_image);
 }
 
